@@ -1,0 +1,4 @@
+PySide6>=6.4.0
+pyaudio>=0.2.11
+keyboard>=0.13.5; sys_platform == 'win32'
+python-evdev>=1.4.0; sys_platform == 'linux'
