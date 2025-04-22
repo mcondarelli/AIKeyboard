@@ -7,9 +7,9 @@ import logging
 
 
 class SystemTray(QSystemTrayIcon):
-    def __init__(self):
+    def __init__(self, icon_loc = 'assets/icons/tray_icon.svg'):
         super().__init__()
-        icon_loc = 'assets/icons/tray_icon.svg'
+        
 
         file_info = QFileInfo(__file__)
         app_dir = file_info.absoluteDir()  # QDir of tray.py's directory
@@ -23,6 +23,13 @@ class SystemTray(QSystemTrayIcon):
             icon_path = app_dir.absoluteFilePath("src/aikeyboard/"+icon_loc)
             if not QFileInfo(icon_path).exists():
                 raise FileNotFoundError(f"Icon not found at: {icon_path}")
+        logging.info(f'SystemTray.__init__(): Loading icon from {icon_path}')
+
+
+        # Load base icon
+        self.base_icon = QIcon(icon_path)
+        if self.base_icon.isNull():
+            raise ValueError("Failed to load base icon")
 
         # Create state icons
         self.state_icons = {
@@ -46,11 +53,19 @@ class SystemTray(QSystemTrayIcon):
 
     def _create_state_icon(self, bg_color):
         """Create icon with colored background"""
-        pixmap = self.icon().pixmap(64, 64)
-        painter = QPainter(pixmap)
-        painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationOver)
-        painter.fillRect(pixmap.rect(), bg_color)
-        painter.end()
+        # Get base pixmap (64x64 is standard for tray icons)
+        pixmap = self.base_icon.pixmap(64, 64)
+        
+        # Only paint if we have a color
+        if bg_color != QColorConstants.Transparent:
+            painter = QPainter(pixmap)
+            if painter.isActive():
+                painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationOver)
+                painter.fillRect(pixmap.rect(), bg_color)
+                painter.end()
+            else:
+                logging.error("Failed to activate painter")
+                
         return QIcon(pixmap)
         
     def update_state(self, state):
