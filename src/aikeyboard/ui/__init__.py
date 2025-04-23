@@ -1,2 +1,2 @@
-from src.aikeyboard.ui.device_selector import DeviceSelector
-__all__ = ['DeviceSelector']
+from aikeyboard.ui.device_manager import DeviceManager
+__all__ = ['DeviceManager']

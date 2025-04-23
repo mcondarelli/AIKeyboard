@@ -28,6 +28,7 @@ class SpeechWorker(QObject):
     def start_listening(self):
         """Start the speech recognition loop"""
         try:
+            self.state_changed.emit("listening")
             self.stream = self.pa.open(
                 format=pyaudio.paInt16,
                 channels=1,
@@ -62,8 +63,10 @@ class SpeechWorker(QObject):
                         self.state_changed.emit("listening")
 
         except Exception as e:
+            self.state_changed.emit("idle")
             self.error.emit(str(e))
         finally:
+            self.state_changed.emit("idle")
             self._cleanup()
             self.finished.emit()
 
@@ -94,7 +97,7 @@ class SpeechRecognizer(QObject):
     def __del__(self):
         self.stop_listening()  # Ensure cleanup on deletion
 
-    def start_listening(self, callback):
+    def start_listening(self):
         """Start speech recognition in a QThread"""
         if self.thread and self.thread.isRunning():
             self.stop_listening()
@@ -110,7 +113,6 @@ class SpeechRecognizer(QObject):
         self.worker.moveToThread(self.thread)
         
         # Connect signals
-        self.worker.recognized.connect(callback)
         self.worker.finished.connect(self.thread.quit)
         self.worker.error.connect(lambda e: logging.error(f"Speech error: {e}"))
         
