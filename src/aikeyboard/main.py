@@ -1,15 +1,17 @@
 # src/aikeyboard/main.py
-import sys
 import logging
+import sys
 from typing import Optional
-from PySide6.QtWidgets import QApplication
+
 from PySide6.QtCore import QObject
 from PySide6.QtGui import QAction
+from PySide6.QtWidgets import QApplication
+
 from aikeyboard.config import AppConfig
-from src.aikeyboard.tray import SystemTray
 from aikeyboard.ui.device_manager import DeviceManager
 from src.aikeyboard.keyboard.input_manager import InputManager
 from src.aikeyboard.speech import SpeechRecognizer, SpeechWorker
+from src.aikeyboard.tray import SystemTray
 
 logging.basicConfig(level=logging.INFO)
 
@@ -26,6 +28,7 @@ class AIKeyboardApp(QObject):
         self.input = InputManager()
         self.speech: Optional[SpeechRecognizer] = None
         self._setup_state_handling()
+        self.tray.update_state('uninitialized')
 
         # Connect components
         self._setup_menu()
@@ -40,25 +43,32 @@ class AIKeyboardApp(QObject):
         # Populate device menu
         for idx, name in self.device_manager.get_physical_devices():
             action = QAction(f"{idx}: {name[:40]}", self.tray.device_menu)
-            action.triggered.connect(lambda _, i=idx: self.device_manager.device_selected.emit(i))
+            action.triggered.connect(lambda: self._on_device_selected(name))
             self.tray.device_menu.addAction(action)
             
         # Connect listening toggle
-        self.tray.listen_action.triggered.connect(self._toggle_listening)        
+        self.tray.activated.connect(self._toggle_listening)
         
     def _load_config(self):
         """Load saved device index"""
-        device_index = self.config.audio_device
-        if device_index != -1:
-            self._on_device_selected(device_index)
+        device = self.config.audio_device
+        if device is not None:
+            self._on_device_selected(device)
             
-    def _on_device_selected(self, index):
-        logging.info(f"Selected audio device: {index}")
-        device_name = self.device_manager.get_device_name(index)
-        self.config.audio_device = index
+    def _on_device_selected(self, name):
+        logging.info(f"Selected audio device: {name}")
+        self.config.audio_device = name
+        index = self.device_manager.get_device_index(name)
+        if not name or index < 0:
+            logging.warning(f'Inconsistent selected device {index}: "{name}", ignoring.')
+            self.tray.update_state('uninitialized')
+            self.tray.device = None
+            return
 
         # Update UI
-        self.tray.device_info.setText(self.tr(f"Using: {device_name}"))
+        self.tray.update_state('idle')
+        self.tray.device_info.setText(self.tr("Using: %1").replace('%1', name))
+        self.tray.device = name
 
         # Reinitialize speech
         if self.speech:
@@ -72,7 +82,7 @@ class AIKeyboardApp(QObject):
 
     def _toggle_listening(self):
         logging.info(f'AIKeyboardApp._togglelistening({self.is_listening}): called')
-        if not self.speech:
+        if not self.speech or not self.tray.device:
             return
             
         if not getattr(self, 'is_listening', False):
@@ -90,14 +100,22 @@ class AIKeyboardApp(QObject):
         """Minimal working version with proper disconnections"""
         # Disconnect previous
         if self._current_worker:
-            try: self._current_worker.state_changed.disconnect()
-            except: pass
-            try: self._current_worker.recognized.disconnect()
-            except: pass
-            try: self._current_worker.partial_result.disconnect()
-            except: pass
-            try: self._current_worker.error.disconnect()
-            except: pass
+            try: 
+                self._current_worker.state_changed.disconnect()
+            except:  # noqa: E722
+                pass
+            try: 
+                self._current_worker.recognized.disconnect()
+            except:  # noqa: E722
+                pass
+            try: 
+                self._current_worker.partial_result.disconnect()
+            except:  # noqa: E722
+                pass
+            try: 
+                self._current_worker.error.disconnect()
+            except:  # noqa: E722
+                pass
         
         # Connect new
         self._current_worker = worker

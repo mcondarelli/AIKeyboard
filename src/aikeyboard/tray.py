@@ -1,9 +1,9 @@
 # src/aikeyboard/tray.py
-from PySide6.QtWidgets import QSystemTrayIcon, QMenu
-from PySide6.QtGui import QIcon, QPainter, QColorConstants
-from PySide6.QtCore import QCoreApplication, QDir, QFileInfo, QTranslator
-
 import logging
+
+from PySide6.QtCore import QCoreApplication, QDir, QFileInfo, QTranslator
+from PySide6.QtGui import QColorConstants, QIcon, QPainter
+from PySide6.QtWidgets import QMenu, QSystemTrayIcon
 
 
 class SystemTray(QSystemTrayIcon):
@@ -38,6 +38,7 @@ class SystemTray(QSystemTrayIcon):
 
         # Create state icons
         self.state_icons = {
+            'uninitialized': self._create_state_icon(QColorConstants.Svg.orangered),
             'idle': self._create_state_icon(QColorConstants.Transparent),
             'listening': self._create_state_icon(QColorConstants.Svg.green),
             'processing': self._create_state_icon(QColorConstants.Svg.yellow)
@@ -120,7 +121,7 @@ class SystemTray(QSystemTrayIcon):
         """Update device status with i18n"""
         self.device = device_name
         if self.device:
-            self.device_status.setText(self.tr("Using: %1", str(self.device)))
+            self.device_status.setText(self.tr("Using: %1").replace('%1', str(self.device)))
             self.listen_action.setEnabled(True)
         else:
             self.device_status.setText(self.tr("No device selected"))
@@ -159,4 +160,4 @@ class SystemTray(QSystemTrayIcon):
     def update_state(self, state):
         """Update icon and translated tooltip"""
         self.setIcon(self.state_icons.get(state, self.state_icons['idle']))
-        self.setToolTip(self.tr("AI Keyboard (%1)", state.capitalize()))
+        self.setToolTip(self.tr("AI Keyboard (%1)").replace('%1', state.capitalize()))

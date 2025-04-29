@@ -1,11 +1,11 @@
 # src/aikeyboard/ui/device_selector.py
 import pyaudio
+
 #from PySide6.QtGui import QAction
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QObject
+
 
 class DeviceManager(QObject):
-    device_selected = Signal(int)  # Signal when device is chosen
-
     def __init__(self):
         self.pa = pyaudio.PyAudio()
         self.current_device = None
@@ -31,18 +31,17 @@ class DeviceManager(QObject):
             return "built-in" in name.lower()
         return True
 
-    #def populate_device_menu(self, menu, callback):
-    #    """Add devices to provided menu"""
-    #    menu.clear()
-    #    for idx, name in self.get_physical_devices():
-    #        action = QAction(self.tr(f"{idx}: {name[:40]}"), menu)
-    #        action.triggered.connect(lambda _, i=idx: callback(i))
-    #        menu.addAction(action)
-    
     def get_device_name(self, index):
         """Get display name for a device index"""
         try:
             return self.pa.get_device_info_by_index(index)["name"]
-        except:
+        except:  # noqa: E722
             return "Unknown Device"
         
+    def get_device_index(self, name):
+        """Get index for a given device name"""
+        return next(
+            (i for i in range(self.pa.get_device_count())
+            if self.pa.get_device_info_by_index(i)["name"] == name),
+            -1)  # Default if no match found
+    
