@@ -1,2 +1,3 @@
-from src.aikeyboard.keyboard.input_manager import InputManager
+from aikeyboard.keyboard.input_manager import InputManager
+
 __all__ = ['InputManager']

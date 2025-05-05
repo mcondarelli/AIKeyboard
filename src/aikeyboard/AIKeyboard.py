@@ -1,0 +1,229 @@
+# src/aikeyboard/AIKeyboard.py
+import logging
+import sys
+from typing import Optional
+
+from PySide6.QtCore import QCoreApplication, QLocale, QTranslator
+from PySide6.QtGui import QAction, QColorConstants, QIcon, QPainter
+from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
+
+from aikeyboard import resources  # noqa: F401
+from aikeyboard.config import AppConfig
+from aikeyboard.keyboard import InputManager
+from aikeyboard.speech import SpeechRecognizer, SpeechWorker
+from aikeyboard.ui.device_manager import DeviceManager
+
+logging.basicConfig(level=logging.DEBUG)
+
+class AIKeyboardApp(QSystemTrayIcon):
+    def __init__(self):
+        super().__init__()
+        self.device = None
+        # Initialize components
+        self.device_manager = DeviceManager()
+        self.input = InputManager()
+        self.speech: Optional[SpeechRecognizer] = None
+        self.menu = self._create_menu()
+        self.setContextMenu(self.menu)
+        self.is_listening = False
+        self._current_worker: Optional[SpeechWorker] = None
+        self.config = AppConfig()
+        self.activated.connect(self._toggle_listening)
+
+        self._init_icon()
+        self._init_i18n()
+        self._setup_state_handling()
+        self.update_state('uninitialized')
+        self._load_config()
+
+
+    def _init_icon(self):
+        icon_path = ":icons/tray_icon.svg"
+
+        # Load base icon
+        self.base_icon = QIcon(icon_path)
+        if self.base_icon.isNull():
+            raise ValueError("Failed to load base icon")
+
+        # Create state icons
+        self.state_icons = {
+            'uninitialized': self._create_state_icon(QColorConstants.Svg.orangered),
+            'idle': self._create_state_icon(QColorConstants.Transparent),
+            'listening': self._create_state_icon(QColorConstants.Svg.green),
+            'processing': self._create_state_icon(QColorConstants.Svg.yellow)
+        }
+        self.setIcon(self.state_icons['idle'])
+
+    def _create_menu(self):
+        menu = QMenu()
+        # Device info (read-only)
+        self.device_info = menu.addAction(self.tr("No device selected"))
+        self.device_info.setEnabled(True)  # Shows as normal text
+        
+        # Device selection submenu will be added by main.py
+        self.device_menu = menu.addMenu(self.tr("Select Device"))
+        # Populate device menu
+        for idx, name in self.device_manager.get_physical_devices():
+            action = QAction(f"{idx}: {name[:40]}", self.device_menu)
+            action.triggered.connect(lambda: self._on_device_selected(name))
+            self.device_menu.addAction(action)
+        
+        menu.addSeparator()
+        menu.addAction(self.tr("Quit"), QCoreApplication.quit)
+        return menu
+
+    def _init_i18n(self, locale="it_IT"):
+        """Initialize translations only for user-facing text"""
+        locale = locale or QLocale.system().name()  # e.g., 'it_IT'
+        language_code = locale.split("_")[0]        # e.g., 'it'
+        self.translator = QTranslator()
+        # Load from either:
+        # A) File system path (during development)
+        # translation_path = QFileInfo(__file__).absoluteDir().filePath("../../i18n/aikeyboard_it.qm")
+        
+        # OR B) Qt Resources (for deployed apps)
+        translation_path = f":i18n/aikeyboard_{language_code}.qm"
+        
+        if self.translator.load(translation_path):
+            QCoreApplication.installTranslator(self.translator)
+            print(f"Loaded translation: {language_code}")
+        else:
+            print(f"Translation not found for {language_code}")
+
+    def _toggle_listening(self):
+        logging.info(f'AIKeyboardApp._togglelistening({self.is_listening}): called')
+        if not self.speech or not self.device:
+            return
+
+        if not getattr(self, 'is_listening', False):
+            self.speech.start_listening()
+            self.is_listening = True
+        else:
+            self.speech.stop_listening()
+            self.is_listening = False
+
+        # self.listen_action.setText(self.tr("Stop listening") if self.is_listening else self.tr("Start listening"))
+        self.update_state('listening' if self.is_listening else 'idle')
+        logging.info(f'AIKeyboardApp._togglelistening({self.is_listening}): at exit')
+
+
+
+    def show_notification(self, message):
+        """Show translated notification"""
+        self.showMessage(
+            self.tr("AI Keyboard"),
+            message,
+            QSystemTrayIcon.MessageIcon.Information,
+            2000
+        )
+
+    def _create_state_icon(self, bg_color):
+        """Create icon with colored background"""
+        # Get base pixmap (64x64 is standard for tray icons)
+        pixmap = self.base_icon.pixmap(64, 64)
+        
+        # Only paint if we have a color
+        if bg_color != QColorConstants.Transparent:
+            painter = QPainter(pixmap)
+            if painter.isActive():
+                painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationOver)
+                painter.fillRect(pixmap.rect(), bg_color)
+                painter.end()
+            else:
+                logging.error("Failed to activate painter")
+                
+        return QIcon(pixmap)
+        
+    def update_state(self, state):
+        """Update icon and translated tooltip"""
+        self.setIcon(self.state_icons.get(state, self.state_icons['idle']))
+        self.setToolTip(self.tr("AI Keyboard (%1)").replace('%1', state.capitalize()))
+        logging.debug(f'update_state({state}):')
+
+
+    def _setup_state_handling(self):
+        """Connect all state-related signals"""
+        self.state_connections = []
+
+    def _load_config(self):
+        """Load saved device index"""
+        device = self.config.audio_device
+        if device is not None:
+            self._on_device_selected(device)
+            
+    def _on_device_selected(self, name):
+        logging.info(f"Selected audio device: {name}")
+        self.config.audio_device = name
+        index = self.device_manager.get_device_index(name)
+        if not name or index < 0:
+            logging.warning(f'Inconsistent selected device {index}: "{name}", ignoring.')
+            self.update_state('uninitialized')
+            self.device = None
+            return
+
+        # Update UI
+        self.update_state('idle')
+        self.device_info.setText(self.tr("Using: %1").replace('%1', name))
+        self.device = name
+
+        # Reinitialize speech
+        if self.speech:
+            self.speech.stop_listening()
+        self.speech = SpeechRecognizer(device_index=index)
+        if self.speech:
+            # Connect new speech instance
+            self.state_connections.append(
+                self.speech.worker_created.connect(self._connect_worker_signals)
+            )
+
+    def _connect_worker_signals(self, worker):
+        """Minimal working version with proper disconnections"""
+        # Disconnect previous
+        if self._current_worker:
+            try: 
+                self._current_worker.state_changed.disconnect()
+            except:  # noqa: E722
+                pass
+            try: 
+                self._current_worker.recognized.disconnect()
+            except:  # noqa: E722
+                pass
+            try: 
+                self._current_worker.partial_result.disconnect()
+            except:  # noqa: E722
+                pass
+            try: 
+                self._current_worker.error.disconnect()
+            except:  # noqa: E722
+                pass
+        
+        # Connect new
+        self._current_worker = worker
+        worker.state_changed.connect(self._handle_state_change)
+        worker.recognized.connect(self._on_speech_recognized)
+        worker.partial_result.connect(self._on_partial_result)
+        worker.error.connect(self._on_speech_error)        
+
+    def _handle_state_change(self, state):
+        """Update UI based on state"""
+        self.update_state(state)
+        logging.debug(f"State changed to: {state}")
+        
+    def _on_partial_result(self, text):
+        """Handle partial recognition results"""
+        self.setToolTip(f"Listening: {text}...")
+        
+    def _on_speech_error(self, error):
+        logging.error(f"Speech recognition error: {error}")
+        self.show_notification(f"Error: {error}")
+        
+    def _on_speech_recognized(self, text):
+        logging.info(f"Recognized: {text}")
+        self.input.write(text + " ")  # Add space after each phrase
+
+
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    aik = AIKeyboardApp()
+    aik.show()
+    sys.exit(app.exec())

@@ -1,8 +1,10 @@
 # src/aikeyboard/keyboard/input_manager.py
 import platform
-from src.aikeyboard.keyboard.windows import WindowsInput
-from src.aikeyboard.keyboard.linux import LinuxInput
-from src.aikeyboard.keyboard.macos import MacInput
+
+from .linux import LinuxInput
+from .macos import MacInput
+from .windows import WindowsInput
+
 
 class InputManager:
     def __init__(self):
