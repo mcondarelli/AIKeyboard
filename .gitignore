@@ -5,3 +5,6 @@ __pycache__/
 .attic/
 *~
 /vosk-model-*/
+/build/
+/dist/
+/src/aikeyboard/resources*.py

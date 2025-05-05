@@ -1,10 +1,14 @@
 # src/aikeyboard/tray.py
 import logging
 
-from PySide6.QtCore import QCoreApplication, QDir, QFileInfo, QTranslator
+from PySide6.QtCore import QCoreApplication, QDir, QFileInfo, QTranslator, QLocale
 from PySide6.QtGui import QColorConstants, QIcon, QPainter
 from PySide6.QtWidgets import QMenu, QSystemTrayIcon
 
+from  aikeyboard import resources
+#from PySide6.QtCore import QFile
+#resources.qInitResources()
+#print(QFile.exists(":icons/tray_icon.svg"))
 
 class SystemTray(QSystemTrayIcon):
     def __init__(self, icon_loc = 'assets/icons/tray_icon.svg'):
@@ -16,20 +20,22 @@ class SystemTray(QSystemTrayIcon):
         self.setContextMenu(self.menu)
 
     def _init_icon(self, icon_loc):
-        file_info = QFileInfo(__file__)
-        app_dir = file_info.absoluteDir()  # QDir of tray.py's directory
-        icon_path = app_dir.filePath("../" + icon_loc)  # QDir handles ".." correctly
-        logging.info(f'SystemTray.__init__(): {app_dir} -> {icon_path}')
+        if False:
+            file_info = QFileInfo(__file__)
+            app_dir = file_info.absoluteDir()  # QDir of tray.py's directory
+            icon_path = app_dir.filePath("../" + icon_loc)  # QDir handles ".." correctly
+            logging.info(f'SystemTray.__init__(): {app_dir} -> {icon_path}')
 
-        # Verify the path exists (optional but recommended)
-        if not QFileInfo(icon_path).exists():
-            # try loading from application path:
-            app_dir = QDir(QCoreApplication.applicationDirPath())  # Root of the executable
-            icon_path = app_dir.absoluteFilePath("src/aikeyboard/"+icon_loc)
+            # Verify the path exists (optional but recommended)
             if not QFileInfo(icon_path).exists():
-                raise FileNotFoundError(f"Icon not found at: {icon_path}")
-        logging.info(f'SystemTray.__init__(): Loading icon from {icon_path}')
-
+                # try loading from application path:
+                app_dir = QDir(QCoreApplication.applicationDirPath())  # Root of the executable
+                icon_path = app_dir.absoluteFilePath("src/aikeyboard/"+icon_loc)
+                if not QFileInfo(icon_path).exists():
+                    raise FileNotFoundError(f"Icon not found at: {icon_path}")
+            logging.info(f'SystemTray.__init__(): Loading icon from {icon_path}')
+        else:
+            icon_path = ":icons/tray_icon.svg"
 
         # Load base icon
         self.base_icon = QIcon(icon_path)
@@ -62,21 +68,24 @@ class SystemTray(QSystemTrayIcon):
         menu.addAction(self.tr("Quit"), QCoreApplication.quit)
         return menu
 
-    def _init_i18n(self):
+    def _init_i18n(self, locale="it_IT"):
         """Initialize translations only for user-facing text"""
+        locale = locale or QLocale.system().name()  # e.g., 'it_IT'
+        language_code = locale.split("_")[0]        # e.g., 'it'
         self.translator = QTranslator()
         # Load from either:
         # A) File system path (during development)
-        translation_path = QFileInfo(__file__).absoluteDir().filePath("../../i18n/aikeyboard_it.qm")
+        # translation_path = QFileInfo(__file__).absoluteDir().filePath("../../i18n/aikeyboard_it.qm")
         
         # OR B) Qt Resources (for deployed apps)
-        # translation_path = ":/i18n/aikeyboard_it.qm"
+        translation_path = f":i18n/aikeyboard_{language_code}.qm"
         
         if self.translator.load(translation_path):
             QCoreApplication.installTranslator(self.translator)
+            print(f"Loaded translation: {language_code}")
         else:
-            logging.warning("Failed to load translation")
-            
+            print(f"Translation not found for {language_code}")
+                
     def _find_icon_path(self, icon_loc):
         """Existing working implementation"""
         file_info = QFileInfo(__file__)

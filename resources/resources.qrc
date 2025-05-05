@@ -1,0 +1,6 @@
+<RCC>
+  <qresource>
+    <file>icons/tray_icon.svg</file>
+    <file>i18n/aikeyboard_it.qm</file>
+  </qresource>
+</RCC>
