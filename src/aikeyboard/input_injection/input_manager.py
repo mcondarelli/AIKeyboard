@@ -1,9 +1,9 @@
 # src/aikeyboard/keyboard/input_manager.py
 import platform
 
-from .linux import LinuxInput
-from .macos import MacInput
-from .windows import WindowsInput
+from aikeyboard.input_injection.linux import LinuxInput
+from aikeyboard.input_injection.macos import MacInput
+from aikeyboard.input_injection.windows import WindowsInput
 
 
 class InputManager:

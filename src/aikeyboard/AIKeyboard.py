@@ -8,14 +8,28 @@ from PySide6.QtGui import QAction, QColorConstants, QIcon, QPainter
 from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
 from aikeyboard import resources  # noqa: F401
-from aikeyboard.config import AppConfig
-from aikeyboard.keyboard import InputManager
+from aikeyboard.config import app_config
+from aikeyboard.input_injection import InputManager
 from aikeyboard.speech import SpeechRecognizer, SpeechWorker
 from aikeyboard.ui.device_manager import DeviceManager
 
 logging.basicConfig(level=logging.DEBUG)
 
 class AIKeyboardApp(QSystemTrayIcon):
+    LANG_FLAGS = {
+        "all": "🇺🇳", "ar": "🇸🇦", "ar-tn": "🇹🇳", "br": "🇫🇷",
+        "ca": "🇪🇸", "cn": "🇨🇳", "cs": "🇨🇿", "de": "🇩🇪", 
+        "el-gr": "🇬🇷", "en": "🇬🇧", "en-gb": "🇬🇧", "en-in": "🇮🇳",
+        "en-us": "🇺🇸", "eo": "🏳", "es": "🇪🇸", "fa": "🏳", "fr": "🇫🇷",
+        "gu": "🏳", "hi": "🇮🇳", "it": "🇮🇹", "ja": "🇯🇵","ko": "🇰🇷",
+        "kz": "🇰🇿", "nl": "🇳🇱", "pl": "🇵🇱", "pt": "🇵🇹", "sv": "🇸🇪", 
+        "ru": "🇷🇺", "te": "🏳", "tg": "🇹🇯", "tl-ph": "🇵🇭", "tr": "🇹🇷",
+        "ua": "🇺🇦", "uz": "🇺🇿", "vn": "🇻🇳", "zh": "🇨🇳",
+    }
+    VERSION_ICONS = {
+        "small": "🔹", "spk": "🔸", "big-lgraph": "💠", "big": "🧊"
+    }
+
     def __init__(self):
         super().__init__()
         self.device = None
@@ -27,7 +41,6 @@ class AIKeyboardApp(QSystemTrayIcon):
         self.setContextMenu(self.menu)
         self.is_listening = False
         self._current_worker: Optional[SpeechWorker] = None
-        self.config = AppConfig()
         self.activated.connect(self._toggle_listening)
 
         self._init_icon()
@@ -35,7 +48,6 @@ class AIKeyboardApp(QSystemTrayIcon):
         self._setup_state_handling()
         self.update_state('uninitialized')
         self._load_config()
-
 
     def _init_icon(self):
         icon_path = ":icons/tray_icon.svg"
@@ -68,9 +80,37 @@ class AIKeyboardApp(QSystemTrayIcon):
             action.triggered.connect(lambda: self._on_device_selected(name))
             self.device_menu.addAction(action)
         
+        menu.addMenu(self._create_model_menu())
+
         menu.addSeparator()
         menu.addAction(self.tr("Quit"), QCoreApplication.quit)
         return menu
+
+    def _create_model_menu(self):
+        try:
+            from aikeyboard.model_cache import model_cache
+            langs = model_cache.get_languages()
+        except Exception as e:
+            print(f"Failed to fetch model list: {e}")
+            return QMenu(self.tr("Select Model (unavailable)"))
+
+        model_menu = QMenu(self.tr("Select Model"))
+
+        for lang in langs:
+            flag = self.LANG_FLAGS.get(lang, "🏳")
+            models = model_cache.get_models_for_language(lang)
+            if models:
+                sub = QMenu(f"{flag} {lang}")
+                for model in models:
+                    size = model.size
+                    icon = self.VERSION_ICONS.get(size, "📦")
+                    label = f'{icon} {model.name}'
+                    action = QAction(label, sub)
+                    action.triggered.connect(lambda _, m=model.name: self._on_model_selected(m))
+                    sub.addAction(action)
+                model_menu.addMenu(sub)
+        return model_menu
+
 
     def _init_i18n(self, locale="it_IT"):
         """Initialize translations only for user-facing text"""
@@ -147,13 +187,13 @@ class AIKeyboardApp(QSystemTrayIcon):
 
     def _load_config(self):
         """Load saved device index"""
-        device = self.config.audio_device
+        device = app_config.audio_device
         if device is not None:
             self._on_device_selected(device)
             
     def _on_device_selected(self, name):
         logging.info(f"Selected audio device: {name}")
-        self.config.audio_device = name
+        app_config.audio_device = name
         index = self.device_manager.get_device_index(name)
         if not name or index < 0:
             logging.warning(f'Inconsistent selected device {index}: "{name}", ignoring.')
@@ -175,6 +215,10 @@ class AIKeyboardApp(QSystemTrayIcon):
             self.state_connections.append(
                 self.speech.worker_created.connect(self._connect_worker_signals)
             )
+
+    def _on_model_selected(self, model_name: str):
+        print(f"Selected Vosk model: {model_name}")
+        self.config.model = model_name # type: ignore
 
     def _connect_worker_signals(self, worker):
         """Minimal working version with proper disconnections"""

@@ -1,35 +1,51 @@
 # src/aikeyboard/speech.py
-from typing import Optional
-import pyaudio
-from vosk import Model, KaldiRecognizer
 import json
-import time
 import logging
-from PySide6.QtCore import QObject, Signal, Slot, QThread
+from typing import Optional
+
+import pyaudio
+from PySide6.QtCore import Property, QObject, QThread, Signal, Slot
+from vosk import KaldiRecognizer, Model
+
+from aikeyboard.model_cache import model_cache
 
 
 class SpeechWorker(QObject):
     state_changed = Signal(str)  # "listening", "processing", "idle"
     partial_result = Signal(str)
-    recognized = Signal(str)  # Signal emitted when text is recognized
-    finished = Signal()       # Signal emitted when thread finishes
-    error = Signal(str)       # Signal emitted on errors
+    recognized = Signal(str)     # Signal emitted when text is recognized
+    finished = Signal()          # Signal emitted when thread finishes
+    error = Signal(str)          # Signal emitted on errors
 
     def __init__(self, device_index=None):
         super().__init__()
         self.device_index = device_index
         self._stop_requested = False
-        self.model = Model("vosk-model-small-it-0.22")
-        self.rec = KaldiRecognizer(self.model, 16000)
-        self.pa = pyaudio.PyAudio()
-        self.stream = None
+        self._state = "idle"
+
+    @Property(str, notify=state_changed) # type: ignore[call-arg]
+    def state(self) -> str: # type: ignore
+        return self._state
+    
+    @state.setter
+    def state(self, state: str) -> None:
+        if self._state != state:
+            self._state = state
+            self.state_changed.emit(self._state)
 
     @Slot()
     def start_listening(self):
         """Start the speech recognition loop"""
+        self.state = "uninitialized" # type: ignore
         try:
-            self.state_changed.emit("listening")
-            self.stream = self.pa.open(
+            # Initialization
+            stream = None
+            model_path = model_cache.ensure_model()
+            model = Model(model_path)
+            rec = KaldiRecognizer(model, 16000)
+            pa = pyaudio.PyAudio()
+        
+            stream = pa.open(
                 format=pyaudio.paInt16,
                 channels=1,
                 rate=16000,
@@ -37,52 +53,44 @@ class SpeechWorker(QObject):
                 frames_per_buffer=8192,
                 input_device_index=self.device_index
             )
-            
-            self.last_audio_time = 0
-            self.state_changed.emit("listening")
-            
+
+            # Main loop
+            self.state = "listening" # type: ignore
             while not self._stop_requested:
-                data = self.stream.read(4096, exception_on_overflow=False)
-                self.last_audio_time = time.time()
-                
-                if self.rec.AcceptWaveform(data):
-                    result = json.loads(self.rec.Result())
+                try:
+                    data = stream.read(4096, exception_on_overflow=False)
+                except Exception as e:
+                    logging.warning(f"Audio read error: {e}")
+                    continue
+
+                if rec.AcceptWaveform(data):
+                    result = json.loads(rec.Result())
                     text = result.get("text", "").strip()
                     if text:
-                        self.state_changed.emit("processing")
                         self.recognized.emit(text)
-                        self.state_changed.emit("listening")
+                    self.state = "listening" # type: ignore
+                else:
+                    # Handle partial results and pause detection
+                    partial = json.loads(rec.PartialResult())
+                    if partial.get("partial", ""):
+                        self.partial_result.emit(partial['partial'])
+                        self.state= "processing" # type: ignore
                 
-                # Handle partial results and pause detection
-                partial = json.loads(self.rec.PartialResult())
-                if partial.get("partial", ""):
-                    self.partial_result.emit(partial['partial'])
-                    if time.time() - self.last_audio_time > 1.0:  # 1 second pause
-                        self.state_changed.emit("processing")
-                        self.recognized.emit(partial['partial'].strip())
-                        self.state_changed.emit("listening")
-
         except Exception as e:
-            self.state_changed.emit("idle")
             self.error.emit(str(e))
         finally:
-            self.state_changed.emit("idle")
-            self._cleanup()
+            self.state = "idle" # type: ignore
+            # Clean up audio resources
+            if stream:
+                stream.stop_stream()
+                stream.close()
+            pa.terminate()
             self.finished.emit()
 
     @Slot()
     def stop_listening(self):
         """Request the thread to stop"""
         self._stop_requested = True
-
-    def _cleanup(self):
-        """Clean up audio resources"""
-        if self.stream:
-            self.stream.stop_stream()
-            self.stream.close()
-            self.stream = None
-        self.pa.terminate()
-
 
 
 class SpeechRecognizer(QObject):
