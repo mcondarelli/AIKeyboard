@@ -218,7 +218,7 @@ class AIKeyboardApp(QSystemTrayIcon):
 
     def _on_model_selected(self, model_name: str):
         print(f"Selected Vosk model: {model_name}")
-        self.config.model = model_name # type: ignore
+        app_config.model = model_name # type: ignore
 
     def _connect_worker_signals(self, worker):
         """Minimal working version with proper disconnections"""
