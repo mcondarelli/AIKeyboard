@@ -1,36 +1,30 @@
-# AIKeyboard.spec
-from PyInstaller.utils.hooks import collect_data_files
-from PyInstaller import __main__ as pyi
+# -*- mode: python ; coding: utf-8 -*-
 import os
-from pathlib import Path
+from PyInstaller.utils.hooks import collect_all
 
-# Get Vosk package path
-import vosk
-vosk_path = Path(vosk.__file__).parent
+project_root = os.path.abspath("src")
 
-
-block_cipher = None
+datas = []
+binaries = []
+hiddenimports = ['aikeyboard', 'aikeyboard.speech', 'aikeyboard.model_cache']
+tmp_ret = collect_all('vosk')
+datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
 
 a = Analysis(
     ['src/aikeyboard/AIKeyboard.py'],
-    pathex=[],
-    binaries=[
-        (os.path.join(vosk_path, 'libvosk.so'), 'vosk'),
-    ],
-    datas=collect_data_files('PySide6', subdir='Qt') + collect_data_files('PySide6', subdir='plugins'),
-    hiddenimports=[],
+    pathex=[project_root],
+    binaries=binaries,
+    datas=datas,
+    hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
     excludes=[],
-    win_no_prefer_redirects=False,
-    win_private_assemblies=False,
-    cipher=block_cipher,
     noarchive=False,
     optimize=0,
 )
-pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
+pyz = PYZ(a.pure)
 
 exe = EXE(
     pyz,
@@ -51,4 +45,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon='resources/icons/aikeyboard.ico',
 )
