@@ -1,27 +1,36 @@
-# -*- mode: python ; coding: utf-8 -*-
+# AIKeyboard.spec
 from PyInstaller.utils.hooks import collect_data_files
+from PyInstaller import __main__ as pyi
 import os
+from pathlib import Path
 
-model_path = os.path.abspath("vosk-model-small-it-0.22")
-libvosk_path = os.path.abspath(".venv/lib/python3.13/site-packages/vosk/libvosk.so")
+# Get Vosk package path
+import vosk
+vosk_path = Path(vosk.__file__).parent
+
+
+block_cipher = None
+
 
 a = Analysis(
-    ['src/aikeyboard/main.py'],
+    ['src/aikeyboard/AIKeyboard.py'],
     pathex=[],
-    binaries=[],
-    datas=[
-        (libvosk_path, "vosk"),
-        (model_path, "vosk-model-small-it-0.22")
+    binaries=[
+        (os.path.join(vosk_path, 'libvosk.so'), 'vosk'),
     ],
+    datas=collect_data_files('PySide6', subdir='Qt') + collect_data_files('PySide6', subdir='plugins'),
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
     excludes=[],
+    win_no_prefer_redirects=False,
+    win_private_assemblies=False,
+    cipher=block_cipher,
     noarchive=False,
     optimize=0,
 )
-pyz = PYZ(a.pure)
+pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
 exe = EXE(
     pyz,
@@ -29,7 +38,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='main',
+    name='AIKeyboard',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
