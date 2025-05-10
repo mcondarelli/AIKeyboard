@@ -77,7 +77,7 @@ class AIKeyboardApp(QSystemTrayIcon):
         # Populate device menu
         for idx, name in self.device_manager.get_physical_devices():
             action = QAction(f"{idx}: {name[:40]}", self.device_menu)
-            action.triggered.connect(lambda: self._on_device_selected(name))
+            action.triggered.connect(lambda _, n=name: self._on_device_selected(n))
             self.device_menu.addAction(action)
         
         menu.addMenu(self._create_model_menu())
@@ -130,7 +130,9 @@ class AIKeyboardApp(QSystemTrayIcon):
         else:
             print(f"Translation not found for {language_code}")
 
-    def _toggle_listening(self):
+    def _toggle_listening(self, reason):
+        if reason != QSystemTrayIcon.ActivationReason.Trigger:
+            return
         logging.info(f'AIKeyboardApp._togglelistening({self.is_listening}): called')
         if not self.speech or not self.device:
             return

@@ -1,9 +1,13 @@
 # src/aikeyboard/speech.py
 import json
 import logging
+import time
 from typing import Optional
 
 import pyaudio
+import numpy as np
+from scipy.signal import resample_poly
+
 from PySide6.QtCore import Property, QObject, QThread, Signal, Slot
 from vosk import KaldiRecognizer, Model
 
@@ -19,7 +23,7 @@ class SpeechWorker(QObject):
 
     def __init__(self, device_index=None):
         super().__init__()
-        self.device_index = device_index
+        self.device_index: Optional[int] = device_index
         self._stop_requested = False
         self._state = "idle"
 
@@ -36,19 +40,31 @@ class SpeechWorker(QObject):
     @Slot()
     def start_listening(self):
         """Start the speech recognition loop"""
+        output_rate = 16000
         self.state = "uninitialized" # type: ignore
         try:
+            if self.device_index is None:
+                raise ValueError("device_index is not set")
             # Initialization
             stream = None
             model_path = model_cache.ensure_model()
             model = Model(model_path)
-            rec = KaldiRecognizer(model, 16000)
+            time.sleep(0.25)
+            rec = KaldiRecognizer(model, output_rate)
+            time.sleep(0.25)
             pa = pyaudio.PyAudio()
+
+            # Query actual rate of the selected input device
+            device_info = pa.get_device_info_by_index(self.device_index)
+            input_rate = int(device_info['defaultSampleRate'])
+            logging.info(f"Input rate for device {self.device_index}-{device_info['name']}: {input_rate} Hz")
+            if device_info.get("maxInputChannels", 0) == 0:
+                raise RuntimeError(f"Device {self.device_index} does not support input!")
         
             stream = pa.open(
                 format=pyaudio.paInt16,
                 channels=1,
-                rate=16000,
+                rate=input_rate,
                 input=True,
                 frames_per_buffer=8192,
                 input_device_index=self.device_index
@@ -62,6 +78,29 @@ class SpeechWorker(QObject):
                 except Exception as e:
                     logging.warning(f"Audio read error: {e}")
                     continue
+
+                # Downsample to 16000 if needed
+                if input_rate != output_rate:
+                    try:
+                        # data = audioop.ratecv(data, 2, 1, input_rate, 16000, None)[0]
+
+                        # Convert bytes to numpy array (16-bit mono audio)
+                        audio = np.frombuffer(data, dtype=np.int16)
+
+                        # Calculate GCD for rational resample
+                        gcd = np.gcd(input_rate, output_rate)
+                        up = output_rate // gcd
+                        down = input_rate // gcd
+
+                        # Perform polyphase resampling
+                        resampled = resample_poly(audio, up, down)
+
+                        # Convert back to bytes
+                        data = resampled.astype(np.int16).tobytes()
+
+                    except Exception as e:
+                        logging.warning(f"Resample error: {e}")
+                        continue                
 
                 if rec.AcceptWaveform(data):
                     result = json.loads(rec.Result())

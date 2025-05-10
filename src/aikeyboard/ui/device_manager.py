@@ -14,22 +14,53 @@ class DeviceManager(QObject):
         devices = []
         for i in range(self.pa.get_device_count()):
             info = self.pa.get_device_info_by_index(i)
-            if (int(info["maxInputChannels"]) > 0 and self._is_hardware_device(info["name"])):
-                devices.append((i, info["name"]))
+            name = info.get("name", "")
+            if self._is_valid_input_device(name, i):
+                devices.append((i, name))
         return devices
 
-    def _is_hardware_device(self, name):
-        # Platform-specific hardware detection
+    def _is_valid_input_device(self, name, index=None):
+        """Return True if the device is likely to be a usable microphone."""
+        if index is None:
+            index = self.get_device_index(name)
+        name = name.lower()
+
+        # Platform-specific name heuristics
         import platform
         system = platform.system()
-        
         if system == "Linux":
-            return "hw:" in name.lower()
+            if "monitor" in name or "loopback" in name:
+                return False
         elif system == "Windows":
-            return not ("virtual" in name.lower() or "mme" in name.lower())
+            if "virtual" in name or "mme" in name or "mixaggio" in name or "stereo" in name:
+                return False
         elif system == "Darwin":
-            return "built-in" in name.lower()
-        return True
+            if "built-in output" in name:
+                return False
+
+        # Try to open the device and check usability
+        pa = pyaudio.PyAudio()
+        try:
+            info = pa.get_device_info_by_index(index)
+            rate = int(info['defaultSampleRate'])
+            if info.get('maxInputChannels', 0) < 1: # type: ignore
+                return False
+            # Try opening the device to ensure it's actually usable
+            stream = pa.open(
+                format=pyaudio.paInt16,
+                channels=1,
+                rate=rate,
+                input=True,
+                input_device_index=index,
+                frames_per_buffer=512
+            )
+            stream.close()
+            return True
+        except Exception:
+            return False
+        finally:
+            pa.terminate()
+            
 
     def get_device_name(self, index):
         """Get display name for a device index"""

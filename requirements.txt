@@ -2,6 +2,8 @@ PySide6
 tqdm
 vosk
 pyaudio
+numpy
+scipy
 requests
 keyboard; sys_platform == 'win32'
 python-evdev; sys_platform == 'linux'
