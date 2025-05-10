@@ -4,14 +4,13 @@ import logging
 import time
 from typing import Optional
 
-import pyaudio
 import numpy as np
-from scipy.signal import resample_poly
-
 from PySide6.QtCore import Property, QObject, QThread, Signal, Slot
+from scipy.signal import resample_poly
 from vosk import KaldiRecognizer, Model
 
 from aikeyboard.model_cache import model_cache
+from aikeyboard.device_manager import device_manager
 
 
 class SpeechWorker(QObject):
@@ -25,6 +24,8 @@ class SpeechWorker(QObject):
         super().__init__()
         self.device_index: Optional[int] = device_index
         self._stop_requested = False
+        self._paused = False
+        self.main_loop_active = False
         self._state = "idle"
 
     @Property(str, notify=state_changed) # type: ignore[call-arg]
@@ -38,8 +39,22 @@ class SpeechWorker(QObject):
             self.state_changed.emit(self._state)
 
     @Slot()
+    def pause(self):
+        logging.info("SpeechWorker.pause()")
+        self._paused = True
+
+    @Slot()
+    def resume(self):
+        logging.info("SpeechWorker.resume()")
+        self._paused = False
+
+    @Slot()
     def start_listening(self):
         """Start the speech recognition loop"""
+        if self.main_loop_active:
+            logging.error('SpeechWorker.start_listening(): already active, ignored')
+        self.main_loop_active = True
+        logging.info('SpeechWorker.start_listening():')
         output_rate = 16000
         self.state = "uninitialized" # type: ignore
         try:
@@ -52,25 +67,20 @@ class SpeechWorker(QObject):
             time.sleep(0.25)
             rec = KaldiRecognizer(model, output_rate)
             time.sleep(0.25)
-            pa = pyaudio.PyAudio()
+            logging.info('SpeechWorker.start_listening(): Vosk is initialized')
+            pa = device_manager.get_pa()
 
             # Query actual rate of the selected input device
             device_info = pa.get_device_info_by_index(self.device_index)
             input_rate = int(device_info['defaultSampleRate'])
-            logging.info(f"Input rate for device {self.device_index}-{device_info['name']}: {input_rate} Hz")
+            logging.info(f"SpeechWorker.start_listening(): input rate for device {self.device_index}-{device_info['name']}: {input_rate} Hz")
             if device_info.get("maxInputChannels", 0) == 0:
                 raise RuntimeError(f"Device {self.device_index} does not support input!")
         
-            stream = pa.open(
-                format=pyaudio.paInt16,
-                channels=1,
-                rate=input_rate,
-                input=True,
-                frames_per_buffer=8192,
-                input_device_index=self.device_index
-            )
+            stream = device_manager.get_stream(input_rate, self.device_index, frames_per_buffer=8192)
 
             # Main loop
+            logging.info('SpeechWorker.start_listening(): entering main loop')
             self.state = "listening" # type: ignore
             while not self._stop_requested:
                 try:
@@ -78,6 +88,12 @@ class SpeechWorker(QObject):
                 except Exception as e:
                     logging.warning(f"Audio read error: {e}")
                     continue
+
+                if self._paused:
+                    self.state = "idle" # type: ignore
+                    continue
+                if self.state == "idle":
+                    self.state = "listening" # type: ignore
 
                 # Downsample to 16000 if needed
                 if input_rate != output_rate:
@@ -114,7 +130,7 @@ class SpeechWorker(QObject):
                     if partial.get("partial", ""):
                         self.partial_result.emit(partial['partial'])
                         self.state= "processing" # type: ignore
-                
+            logging.info('SpeechWorker.start_listening(): out of main loop')                
         except Exception as e:
             self.error.emit(str(e))
         finally:
@@ -123,12 +139,13 @@ class SpeechWorker(QObject):
             if stream:
                 stream.stop_stream()
                 stream.close()
-            pa.terminate()
+            self.main_loop_active = False
             self.finished.emit()
 
     @Slot()
     def stop_listening(self):
         """Request the thread to stop"""
+        logging.info('SpeechWorker.stop_listening():')
         self._stop_requested = True
 
 
@@ -141,47 +158,40 @@ class SpeechRecognizer(QObject):
         self.worker: Optional[SpeechWorker] = None
         self.thread: Optional[QThread] = None
 
-    def __del__(self):
-        self.stop_listening()  # Ensure cleanup on deletion
+    def start(self):
+        """Start thread only once"""
+        if not self.thread:
+            logging.info('SpeechRecognizer.start():')
+            self.worker = SpeechWorker(self.device_index)
+            self.thread = QThread()
+            self.worker.moveToThread(self.thread)
 
-    def start_listening(self):
-        """Start speech recognition in a QThread"""
-        if self.thread and self.thread.isRunning():
-            self.stop_listening()
+            self.worker.finished.connect(self.thread.quit)
+            self.thread.finished.connect(self.worker.deleteLater)
+            self.thread.finished.connect(self.thread.deleteLater)
 
-        # Setup worker and thread
-        self.worker = SpeechWorker(self.device_index)
-        self.thread = QThread()
+            self.worker.error.connect(lambda e: logging.error(f"Speech error: {e}"))
+    
+            self.thread.start()
+            self.thread.started.connect(self.worker.start_listening)
+            self.worker_created.emit(self.worker)
 
-        # Emit signal after worker is created
-        self.worker_created.emit(self.worker)
-        
-        # Move worker to thread
-        self.worker.moveToThread(self.thread)
-        
-        # Connect signals
-        self.worker.finished.connect(self.thread.quit)
-        self.worker.error.connect(lambda e: logging.error(f"Speech error: {e}"))
-        
-        # Start the thread
-        self.thread.started.connect(self.worker.start_listening)
-        self.thread.finished.connect(self.worker.deleteLater)
-
-        self.thread.started.connect(lambda: logging.debug("Thread started"))        # for debugging only
-        self.thread.finished.connect(lambda: logging.debug("Thread finished"))      # for debugging only
-
-        self.thread.start()
-
-    def stop_listening(self):
-        """Stop the speech recognition thread"""
+    def listen(self):
+        self.start()
         if self.worker:
-            self.worker.stop_listening()
-            self.worker = None            
+            self.worker.resume()
+
+    def pause(self):
+        if self.worker:
+            self.worker.pause()
+
+    def stop(self):
+        if self.worker:
+            self.worker._stop_requested = True
         if self.thread:
             self.thread.quit()
-            self.thread.wait(500)
-            if self.thread.isRunning():
-                self.thread.terminate()
-            self.thread.deleteLater()
+            self.thread.wait()
+            self.worker = None
             self.thread = None
-            
+
+        

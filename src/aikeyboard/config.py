@@ -1,7 +1,7 @@
 # src/aikeyboard/config.py
 from PySide6.QtCore import QObject, Property, QSettings, Signal
 from typing import Optional
-from aikeyboard.ui.device_manager import DeviceManager
+from aikeyboard.device_manager import device_manager
 
 class _AppConfig(QObject):
     deviceChanged = Signal(str)
@@ -14,7 +14,7 @@ class _AppConfig(QObject):
         self._model = self._settings.value("model")
         
     def get_device(self) -> Optional[str]:
-        if not any(self._device == n for _, n in DeviceManager().get_physical_devices()):
+        if not any(self._device == n for _, n in device_manager.get_physical_devices()):
             self._device = None
         return self._device
     def set_device(self, name: str):

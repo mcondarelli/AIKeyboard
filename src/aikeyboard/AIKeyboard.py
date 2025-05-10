@@ -3,7 +3,7 @@ import logging
 import sys
 from typing import Optional
 
-from PySide6.QtCore import QCoreApplication, QLocale, QTranslator
+from PySide6.QtCore import QCoreApplication, QLocale, QTimer, QTranslator, Slot
 from PySide6.QtGui import QAction, QColorConstants, QIcon, QPainter
 from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
@@ -11,7 +11,7 @@ from aikeyboard import resources  # noqa: F401
 from aikeyboard.config import app_config
 from aikeyboard.input_injection import InputManager
 from aikeyboard.speech import SpeechRecognizer, SpeechWorker
-from aikeyboard.ui.device_manager import DeviceManager
+from aikeyboard.device_manager import device_manager
 
 logging.basicConfig(level=logging.DEBUG)
 
@@ -34,10 +34,10 @@ class AIKeyboardApp(QSystemTrayIcon):
         super().__init__()
         self.device = None
         # Initialize components
-        self.device_manager = DeviceManager()
         self.input = InputManager()
         self.speech: Optional[SpeechRecognizer] = None
         self.menu = self._create_menu()
+        logging.debug('AIKeyboard.__init__(): menu initialization complete')
         self.setContextMenu(self.menu)
         self.is_listening = False
         self._current_worker: Optional[SpeechWorker] = None
@@ -47,7 +47,9 @@ class AIKeyboardApp(QSystemTrayIcon):
         self._init_i18n()
         self._setup_state_handling()
         self.update_state('uninitialized')
-        self._load_config()
+        logging.debug('AIKeyboard.__init__(): state initialization complete')
+        QTimer.singleShot(0, self._load_config)
+        logging.debug('AIKeyboard.__init__(): all done')
 
     def _init_icon(self):
         icon_path = ":icons/tray_icon.svg"
@@ -75,7 +77,7 @@ class AIKeyboardApp(QSystemTrayIcon):
         # Device selection submenu will be added by main.py
         self.device_menu = menu.addMenu(self.tr("Select Device"))
         # Populate device menu
-        for idx, name in self.device_manager.get_physical_devices():
+        for idx, name in device_manager.get_physical_devices():
             action = QAction(f"{idx}: {name[:40]}", self.device_menu)
             action.triggered.connect(lambda _, n=name: self._on_device_selected(n))
             self.device_menu.addAction(action)
@@ -130,6 +132,7 @@ class AIKeyboardApp(QSystemTrayIcon):
         else:
             print(f"Translation not found for {language_code}")
 
+    @Slot(QSystemTrayIcon.ActivationReason)
     def _toggle_listening(self, reason):
         if reason != QSystemTrayIcon.ActivationReason.Trigger:
             return
@@ -138,10 +141,10 @@ class AIKeyboardApp(QSystemTrayIcon):
             return
 
         if not getattr(self, 'is_listening', False):
-            self.speech.start_listening()
+            self.speech.listen()
             self.is_listening = True
         else:
-            self.speech.stop_listening()
+            self.speech.pause()
             self.is_listening = False
 
         # self.listen_action.setText(self.tr("Stop listening") if self.is_listening else self.tr("Start listening"))
@@ -190,13 +193,14 @@ class AIKeyboardApp(QSystemTrayIcon):
     def _load_config(self):
         """Load saved device index"""
         device = app_config.audio_device
+        logging.debug(f'AIKeyboard._load_config(): device is "{device}"')
         if device is not None:
             self._on_device_selected(device)
             
     def _on_device_selected(self, name):
         logging.info(f"Selected audio device: {name}")
         app_config.audio_device = name
-        index = self.device_manager.get_device_index(name)
+        index = device_manager.get_device_index(name)
         if not name or index < 0:
             logging.warning(f'Inconsistent selected device {index}: "{name}", ignoring.')
             self.update_state('uninitialized')
@@ -210,7 +214,7 @@ class AIKeyboardApp(QSystemTrayIcon):
 
         # Reinitialize speech
         if self.speech:
-            self.speech.stop_listening()
+            self.speech.stop()
         self.speech = SpeechRecognizer(device_index=index)
         if self.speech:
             # Connect new speech instance

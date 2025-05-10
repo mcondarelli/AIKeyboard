@@ -1,23 +1,30 @@
-# src/aikeyboard/ui/device_selector.py
+# src/aikeyboard/device_manager.py
 import pyaudio
 
 #from PySide6.QtGui import QAction
 from PySide6.QtCore import QObject
 
 
-class DeviceManager(QObject):
+class _DeviceManager(QObject):
     def __init__(self):
         self.pa = pyaudio.PyAudio()
         self.current_device = None
+        self.devices = None
+
+    def shutdown(self):
+        self.pa.terminate()
+        #global device_manager
+        #device_manager = None
 
     def get_physical_devices(self):
-        devices = []
-        for i in range(self.pa.get_device_count()):
-            info = self.pa.get_device_info_by_index(i)
-            name = info.get("name", "")
-            if self._is_valid_input_device(name, i):
-                devices.append((i, name))
-        return devices
+        if self.devices is None:
+            self.devices = []
+            for i in range(self.pa.get_device_count()):
+                info = self.pa.get_device_info_by_index(i)
+                name = info.get("name", "")
+                if self._is_valid_input_device(name, i):
+                    self.devices.append((i, name))
+        return self.devices
 
     def _is_valid_input_device(self, name, index=None):
         """Return True if the device is likely to be a usable microphone."""
@@ -39,27 +46,17 @@ class DeviceManager(QObject):
                 return False
 
         # Try to open the device and check usability
-        pa = pyaudio.PyAudio()
         try:
-            info = pa.get_device_info_by_index(index)
+            info = self.pa.get_device_info_by_index(index)
             rate = int(info['defaultSampleRate'])
             if info.get('maxInputChannels', 0) < 1: # type: ignore
                 return False
             # Try opening the device to ensure it's actually usable
-            stream = pa.open(
-                format=pyaudio.paInt16,
-                channels=1,
-                rate=rate,
-                input=True,
-                input_device_index=index,
-                frames_per_buffer=512
-            )
+            stream = self.get_stream(rate, index, 512)
             stream.close()
             return True
         except Exception:
             return False
-        finally:
-            pa.terminate()
             
 
     def get_device_name(self, index):
@@ -76,3 +73,20 @@ class DeviceManager(QObject):
             if self.pa.get_device_info_by_index(i)["name"] == name),
             -1)  # Default if no match found
     
+    def get_pa(self):
+        return self.pa
+    
+    def get_stream(self, rate, index, frames_per_buffer, **kwargs):
+        stream = self.pa.open(
+            format=pyaudio.paInt16,
+            channels=1,
+            rate=rate,
+            input=True,
+            input_device_index=index,
+            frames_per_buffer=frames_per_buffer,
+            **kwargs
+        )
+        return stream
+
+    
+device_manager = _DeviceManager()
