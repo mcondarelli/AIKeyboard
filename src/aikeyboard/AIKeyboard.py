@@ -50,6 +50,7 @@ class AIKeyboardApp(QSystemTrayIcon):
         logging.debug('AIKeyboard.__init__(): state initialization complete')
         QTimer.singleShot(0, self._load_config)
         logging.debug('AIKeyboard.__init__(): all done')
+        self.showMessage('AiKeyboard', 'ready', msecs=1000)
 
     def _init_icon(self):
         icon_path = ":icons/tray_icon.svg"
