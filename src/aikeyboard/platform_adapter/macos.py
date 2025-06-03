@@ -1,7 +1,14 @@
 # src/aikeyboard/keyboard/macos.py
 import subprocess
 
-class MacInput:
+from PySide6.QtGui import QFont
+from PySide6.QtWidgets import QApplication
+
+
+class MacAdapter:
+    def set_font(self, app: QApplication):
+        app.setFont(QFont("Apple Color Emoji", 11))
+
     def write(self, text):
         subprocess.run(["osascript", "-e", f'tell application "System Events" to keystroke "{text}"'])
         

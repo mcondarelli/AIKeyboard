@@ -9,7 +9,7 @@ from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
 from aikeyboard import resources  # noqa: F401
 from aikeyboard.config import app_config
-from aikeyboard.input_injection import InputManager
+from aikeyboard.platform_adapter import platform_adapter
 from aikeyboard.speech import SpeechRecognizer, SpeechWorker
 from aikeyboard.device_manager import device_manager
 
@@ -34,7 +34,6 @@ class AIKeyboardApp(QSystemTrayIcon):
         super().__init__()
         self.device = None
         # Initialize components
-        self.input = InputManager()
         self.speech: Optional[SpeechRecognizer] = None
         self.menu = self._create_menu()
         logging.debug('AIKeyboard.__init__(): menu initialization complete')
@@ -270,11 +269,12 @@ class AIKeyboardApp(QSystemTrayIcon):
         
     def _on_speech_recognized(self, text):
         logging.info(f"Recognized: {text}")
-        self.input.write(text + " ")  # Add space after each phrase
+        platform_adapter.write(text + " ")  # Add space after each phrase
 
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
+    platform_adapter.set_font(app)
     aik = AIKeyboardApp()
     aik.show()
     sys.exit(app.exec())

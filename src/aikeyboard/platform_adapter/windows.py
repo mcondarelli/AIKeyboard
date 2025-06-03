@@ -1,6 +1,9 @@
 import ctypes
 import time
 
+from PySide6.QtGui import QFont
+from PySide6.QtWidgets import QApplication
+
 PUL = ctypes.POINTER(ctypes.c_ulong)
 
 # Define KEYBDINPUT structure
@@ -32,7 +35,10 @@ KEYEVENTF_KEYUP = 0x0002
 # Function reference
 SendInput = ctypes.windll.user32.SendInput
 
-class WindowsInput:
+class WindowsAdapter:
+    def set_font(self, app: QApplication):
+        app.setFont(QFont("Segoe UI Emoji", 10))
+
     def write(self, text: str):
         for char in text:
             utf16_code = ord(char)

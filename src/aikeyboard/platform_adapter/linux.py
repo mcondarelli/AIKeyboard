@@ -2,10 +2,17 @@
 import subprocess
 import logging
 
-class LinuxInput:
+from PySide6.QtGui import QFont
+from PySide6.QtWidgets import QApplication
+
+
+class LinuxAdapter:
     def __init__(self):
         self.xdotool_available = self._check_xdotool()
-        
+
+    def set_font(self, app: QApplication):
+        app.setFont(QFont("Segoe UI Emoji", 10))
+
     def _check_xdotool(self):
         try:
             subprocess.run(['xdotool', '--version'], check=True, 
