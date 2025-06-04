@@ -6,6 +6,9 @@ from PySide6.QtWidgets import QApplication
 
 
 class MacAdapter:
+    def setup(self):
+        pass
+
     def set_font(self, app: QApplication):
         app.setFont(QFont("Apple Color Emoji", 11))
 

@@ -16,6 +16,9 @@ class PlatformManager:
         else:
             raise OSError(f"Unsupported system: {system}")
 
+    def setup(self):
+        self.impl.setup()
+
     def set_font(self, app):
         self.impl.set_font(app)
 

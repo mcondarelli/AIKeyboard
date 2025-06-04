@@ -50,7 +50,7 @@ class AIKeyboardApp(QSystemTrayIcon):
         logging.debug('AIKeyboard.__init__(): state initialization complete')
         QTimer.singleShot(0, self._load_config)
         self.showMessage('AiKeyboard', 'ready', msecs=1000)
-        platform_adapter.setup_tray_integration()
+        platform_adapter.setup()
         logging.debug('AIKeyboard.__init__(): all done')
 
     def _init_icon(self):

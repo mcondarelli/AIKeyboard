@@ -10,6 +10,9 @@ class LinuxAdapter:
     def __init__(self):
         self.xdotool_available = self._check_xdotool()
 
+    def setup(self):
+        pass
+
     def set_font(self, app: QApplication):
         app.setFont(QFont("Segoe UI Emoji", 10))
 
