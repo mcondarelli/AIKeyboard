@@ -22,4 +22,10 @@ class PlatformManager:
     def write(self, text):
         self.impl.write(text)
 
+    def setup_tray_integration(self):
+        self.impl.setup_tray_integration()
+
+    def restore_previous_focus(self):
+        self.impl.restore_previous_focus()
+
 platform_adapter = PlatformManager()

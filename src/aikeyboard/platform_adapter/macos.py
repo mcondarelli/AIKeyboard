@@ -11,4 +11,9 @@ class MacAdapter:
 
     def write(self, text):
         subprocess.run(["osascript", "-e", f'tell application "System Events" to keystroke "{text}"'])
-        
+
+    def setup_tray_integration(self):
+        pass
+
+    def restore_previous_focus(self):
+        pass

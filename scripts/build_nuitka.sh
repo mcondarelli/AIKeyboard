@@ -14,7 +14,7 @@ rm -rf "$OUTDIR"
 mkdir -p "$OUTDIR"
 
 # Optional: set this if you're in a venv and want to use its Python
-PYTHON=${PYTHON:-python}
+PYTHON=${PYTHON:-.venv/bin/python}
 
 $PYTHON -m nuitka \
   --standalone \

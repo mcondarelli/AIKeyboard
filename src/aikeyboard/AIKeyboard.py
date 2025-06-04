@@ -9,9 +9,9 @@ from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
 from aikeyboard import resources  # noqa: F401
 from aikeyboard.config import app_config
+from aikeyboard.device_manager import device_manager
 from aikeyboard.platform_adapter import platform_adapter
 from aikeyboard.speech import SpeechRecognizer, SpeechWorker
-from aikeyboard.device_manager import device_manager
 
 logging.basicConfig(level=logging.DEBUG)
 
@@ -46,10 +46,12 @@ class AIKeyboardApp(QSystemTrayIcon):
         self._init_i18n()
         self._setup_state_handling()
         self.update_state('uninitialized')
+        self.setToolTip("AIKeyboard - Dictation Control")
         logging.debug('AIKeyboard.__init__(): state initialization complete')
         QTimer.singleShot(0, self._load_config)
-        logging.debug('AIKeyboard.__init__(): all done')
         self.showMessage('AiKeyboard', 'ready', msecs=1000)
+        platform_adapter.setup_tray_integration()
+        logging.debug('AIKeyboard.__init__(): all done')
 
     def _init_icon(self):
         icon_path = ":icons/tray_icon.svg"
@@ -137,6 +139,7 @@ class AIKeyboardApp(QSystemTrayIcon):
         if reason != QSystemTrayIcon.ActivationReason.Trigger:
             return
         logging.info(f'AIKeyboardApp._togglelistening({self.is_listening}): called')
+        platform_adapter.restore_previous_focus()
         if not self.speech or not self.device:
             return
 
@@ -184,7 +187,9 @@ class AIKeyboardApp(QSystemTrayIcon):
         self.setIcon(self.state_icons.get(state, self.state_icons['idle']))
         self.setToolTip(self.tr("AI Keyboard (%1)").replace('%1', state.capitalize()))
         logging.debug(f'update_state({state}):')
-
+        if state != "uninitialized" and not hasattr(self, '_popped'):
+            self.show_notification(self.tr('Speech recognition is now active.'))
+            self._popped = True
 
     def _setup_state_handling(self):
         """Connect all state-related signals"""

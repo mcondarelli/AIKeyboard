@@ -32,3 +32,10 @@ class LinuxAdapter:
             logging.debug(f"Injected text: {text}")
         except Exception as e:
             logging.error(f"Input error: {e}")
+
+    def setup_tray_integration(self):
+        pass
+
+    def restore_previous_focus(self):
+        pass
+
